@@ -59,6 +59,16 @@ const langSelect       = document.getElementById('lang-select');
 const saveSettings     = document.getElementById('save-settings');
 const modelSelect      = document.getElementById('modelSelect');
 
+/* ===== POST-PROCESSING DOM REFS ===== */
+const postprocessBar           = document.getElementById('postprocess-bar');
+const readabilityBtn           = document.getElementById('readability-btn');
+const inspireBtn               = document.getElementById('inspire-btn');
+const postprocessResult        = document.getElementById('postprocess-result');
+const postprocessLabel         = document.getElementById('postprocess-label');
+const postprocessText          = document.getElementById('postprocess-text');
+const postprocessResultActions = document.getElementById('postprocess-result-actions');
+const postprocessSendBtn       = document.getElementById('postprocess-send-btn');
+
 /* ===== UTILITY ===== */
 function escapeHtml(str) {
     return str
@@ -125,11 +135,27 @@ function showTranscriptBar(text, source) {
     transcriptText.textContent = text;
     transcriptBar.dataset.source = source || 'quick';
     transcriptBar.hidden = false;
+
+    // Show / reset post-processing for Brainstorm mode
+    const isBrainstorm = source === 'brainstorm';
+    postprocessBar.hidden = !isBrainstorm;
+    postprocessResult.hidden = true;
+    postprocessResultActions.hidden = true;
+    postprocessText.textContent = '';
+    readabilityBtn.textContent = 'Readability';
+    inspireBtn.textContent = 'Inspire';
+    readabilityBtn.disabled = false;
+    inspireBtn.disabled = false;
 }
 
 function hideTranscriptBar() {
     transcriptBar.hidden = true;
     transcriptText.textContent = '';
+    // Reset post-processing state
+    postprocessBar.hidden = true;
+    postprocessResult.hidden = true;
+    postprocessResultActions.hidden = true;
+    postprocessText.textContent = '';
 }
 
 /* ===== MESSAGE HISTORY ===== */
@@ -195,6 +221,87 @@ sendBtn.addEventListener('click', async () => {
 
 discardBtn.addEventListener('click', () => {
     hideTranscriptBar();
+});
+
+/* ===== BRAINSTORM POST-PROCESSING ===== */
+
+function getBackendBaseUrl() {
+    const backendUrl = localStorage.getItem('brainwaveBackendUrl') || '';
+    if (backendUrl) {
+        try {
+            const url = new URL(backendUrl);
+            return `${url.protocol}//${url.host}`;
+        } catch (_) { /* fall through to default */ }
+    }
+    return `${window.location.protocol}//${window.location.host}`;
+}
+
+let _postprocessedContent = '';
+
+async function runPostProcess(endpoint, label, activeBtn) {
+    const text = transcriptText.textContent.trim();
+    if (!text) return;
+
+    // Reset result area
+    _postprocessedContent = '';
+    postprocessText.textContent = '';
+    postprocessLabel.textContent = label;
+    postprocessResultActions.hidden = true;
+
+    // Disable both buttons; show loading on the active one
+    readabilityBtn.disabled = true;
+    inspireBtn.disabled = true;
+    const origLabel = activeBtn.textContent;
+    activeBtn.textContent = 'Processing…';
+
+    // Show the result area (empty initially so user sees it appeared)
+    postprocessResult.hidden = false;
+
+    try {
+        const response = await fetch(`${getBackendBaseUrl()}${endpoint}`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ text }),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const reader  = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            _postprocessedContent += decoder.decode(value, { stream: true });
+            postprocessText.textContent = _postprocessedContent;
+        }
+
+        // Streaming complete — show Send button
+        postprocessResultActions.hidden = false;
+
+    } catch (err) {
+        console.error('Post-processing error:', err);
+        postprocessText.textContent = 'Error: could not process. Check connection and try again.';
+    } finally {
+        activeBtn.textContent = origLabel;
+        readabilityBtn.disabled = false;
+        inspireBtn.disabled = false;
+    }
+}
+
+readabilityBtn.addEventListener('click', () => {
+    runPostProcess('/api/v1/readability', 'Readability', readabilityBtn);
+});
+
+inspireBtn.addEventListener('click', () => {
+    runPostProcess('/api/v1/correctness', 'Inspire', inspireBtn);
+});
+
+postprocessSendBtn.addEventListener('click', async () => {
+    const text = _postprocessedContent.trim();
+    if (!text) return;
+    hideTranscriptBar();
+    await sendMessage(text, 'brainstorm');
 });
 
 /* ===== SETTINGS MODAL ===== */
