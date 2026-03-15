@@ -7,7 +7,10 @@
   <meta name="mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <title>Brainwave</title>
+  <meta name="apple-mobile-web-app-title" content="Hey Chill"/>
+  <title>Hey Chill</title>
+  <link rel="manifest" href="/manifest.json"/>
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
   <link rel="stylesheet" type="text/css" href="static/style.css"/>
 </head>
 <body>
@@ -17,7 +20,8 @@
     <header class="header">
       <div class="header-title">
         <span class="logo-dot"></span>
-        <h1>Brainwave</h1>
+        <h1>Hey Chill</h1>
+        <span class="wake-dot" id="wake-dot" hidden title="Listening for 'Hey Chill'"></span>
       </div>
       <div class="header-actions">
         <select id="modelSelect" class="model-select" title="Brainstorm model">
@@ -153,13 +157,22 @@
         </select>
         <p class="field-hint">Language used for Quick mode speech recognition.</p>
 
+        <label class="toggle-label" for="hands-free-toggle">
+          <span>Hands-free mode</span>
+          <span class="toggle-switch">
+            <input type="checkbox" id="hands-free-toggle" role="switch"/>
+            <span class="toggle-track"></span>
+          </span>
+        </label>
+        <p class="field-hint">Always listen for "Hey Chill" to start Quick mode automatically.</p>
+
         <label for="webhook-url">Webhook URL</label>
         <input type="url" id="webhook-url"
                placeholder="https://your-webhook.example.com/hook"
                autocomplete="off" spellcheck="false"/>
         <p class="field-hint">Messages are POSTed here as <code>{ text, source, timestamp }</code>.</p>
 
-        <label for="backend-url">Brainwave Backend URL</label>
+        <label for="backend-url">Backend URL</label>
         <input type="url" id="backend-url"
                placeholder="https://your-brainwave-backend.example.com"
                autocomplete="off" spellcheck="false"/>
@@ -171,6 +184,12 @@
     </div>
   </div>
 
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .catch(function(err) { console.warn('SW registration failed:', err); });
+    }
+  </script>
   <script src="static/main.js"></script>
 </body>
 </html>

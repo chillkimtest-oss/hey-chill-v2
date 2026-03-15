@@ -121,8 +121,8 @@ html, body {
   border: 1px solid var(--border);
   color: var(--text-muted);
   border-radius: 50%;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -397,8 +397,8 @@ html, body {
 
 /* Replay button */
 .replay-btn {
-  width: 26px;
-  height: 26px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -739,10 +739,107 @@ html, body {
 }
 
 /* ===== Safe area for notch phones ===== */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
+@supports (padding: env(safe-area-inset-bottom)) {
+  .header {
+    padding-top: calc(16px + env(safe-area-inset-top));
+    padding-left: calc(20px + env(safe-area-inset-left));
+    padding-right: calc(20px + env(safe-area-inset-right));
+  }
+
   .mic-section {
     padding-bottom: calc(36px + env(safe-area-inset-bottom));
   }
+}
+
+/* ===== Wake word indicator ===== */
+.wake-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34c759;
+  box-shadow: 0 0 6px rgba(52, 199, 89, 0.55);
+  flex-shrink: 0;
+  animation: wake-pulse 2s ease-in-out infinite;
+}
+
+@keyframes wake-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* ===== Hands-free toggle in settings ===== */
+.toggle-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-top: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.toggle-switch input[type="checkbox"] {
+  /* visually hidden but accessible */
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  display: block;
+  width: 44px;
+  height: 26px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  position: relative;
+  transition: background var(--transition), border-color var(--transition);
+  cursor: pointer;
+}
+
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform var(--transition), background var(--transition);
+}
+
+.toggle-switch input:checked + .toggle-track {
+  background: rgba(52, 199, 89, 0.25);
+  border-color: #34c759;
+}
+
+.toggle-switch input:checked + .toggle-track::after {
+  transform: translateX(18px);
+  background: #34c759;
+}
+
+.toggle-switch input:focus-visible + .toggle-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ===== Touch target minimums (≥ 44px) ===== */
+.btn-ghost,
+.btn-send {
+  min-height: 44px;
+}
+
+.btn-process {
+  min-height: 44px;
 }
 
 /* ===== Brainstorm Post-Processing ===== */

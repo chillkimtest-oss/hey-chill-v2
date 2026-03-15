@@ -69,6 +69,18 @@ async def get_main_js():
     headers = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
     return FileResponse("static/main.js", media_type="application/javascript", headers=headers)
 
+@app.get("/sw.js")
+async def get_sw():
+    """Serve service worker from root path so its scope covers the full origin."""
+    headers = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+    return FileResponse("static/sw.js", media_type="application/javascript", headers=headers)
+
+@app.get("/manifest.json")
+async def get_manifest():
+    """Serve PWA manifest from root path."""
+    headers = {"Cache-Control": "public, max-age=86400"}
+    return FileResponse("static/manifest.json", media_type="application/manifest+json", headers=headers)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/", response_class=HTMLResponse)
