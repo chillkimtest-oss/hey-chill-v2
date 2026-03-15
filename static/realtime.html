@@ -43,6 +43,24 @@
     <!-- Transcript bar (shown after recording stops, awaiting send/discard) -->
     <div class="transcript-bar" id="transcript-bar" hidden>
       <p class="transcript-text" id="transcript-text"></p>
+
+      <!-- Brainstorm post-processing (only visible when source === 'brainstorm') -->
+      <div class="postprocess-bar" id="postprocess-bar" hidden>
+        <div class="postprocess-actions">
+          <button class="btn-process btn-readability" id="readability-btn">Readability</button>
+          <button class="btn-process btn-inspire" id="inspire-btn">Inspire</button>
+        </div>
+        <div class="postprocess-result" id="postprocess-result" hidden>
+          <div class="postprocess-result-header">
+            <span class="postprocess-label" id="postprocess-label"></span>
+          </div>
+          <p class="postprocess-text" id="postprocess-text"></p>
+          <div class="postprocess-result-actions" id="postprocess-result-actions" hidden>
+            <button class="btn-send" id="postprocess-send-btn">Send</button>
+          </div>
+        </div>
+      </div>
+
       <div class="transcript-actions">
         <button class="btn-ghost" id="discard-btn">Discard</button>
         <button class="btn-send" id="send-btn">Send</button>
