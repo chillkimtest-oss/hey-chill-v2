@@ -1,0 +1,14 @@
+services:
+  brainwave:
+    build: .
+    container_name: brainwave-app
+    restart: unless-stopped
+    ports:
+      - "3005:3005"
+    env_file:
+      - .env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL:-gpt-realtime-mini-2025-12-15}
+      - OPENAI_REALTIME_MODALITIES=${OPENAI_REALTIME_MODALITIES:-text}
