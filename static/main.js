@@ -20,6 +20,11 @@ let streamInitialized      = false;
 let brainstormTranscript   = '';
 let _awaitingBrainstormResult = false;
 
+/* ===== WAKE WORD / HANDS-FREE STATE ===== */
+let wakeRecognition   = null;
+let wakeWordListening = false;
+let handsFreeEnabled  = false;
+
 /* ===== URL PARAMS ===== */
 const urlParams   = new URLSearchParams(window.location.search);
 const autoStart   = urlParams.get('start') === '1';
@@ -58,6 +63,8 @@ const backendUrlInput  = document.getElementById('backend-url');
 const langSelect       = document.getElementById('lang-select');
 const saveSettings     = document.getElementById('save-settings');
 const modelSelect      = document.getElementById('modelSelect');
+const handsFreeToggle  = document.getElementById('hands-free-toggle');
+const wakeDot          = document.getElementById('wake-dot');
 
 /* ===== POST-PROCESSING DOM REFS ===== */
 const postprocessBar           = document.getElementById('postprocess-bar');
@@ -77,6 +84,10 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function haptic(ms) {
+    if (navigator.vibrate) navigator.vibrate(ms);
 }
 
 /* ===== TIMER ===== */
@@ -331,6 +342,13 @@ saveSettings.addEventListener('click', () => {
         }
         // Re-init recognition so new language takes effect immediately
         if (!isListening) initRecognition();
+        // Re-init wake recognition for new language too
+        if (!wakeWordListening) initWakeRecognition();
+    }
+
+    const newHandsFree = handsFreeToggle ? handsFreeToggle.checked : false;
+    if (newHandsFree !== handsFreeEnabled) {
+        setHandsFree(newHandsFree);
     }
 
     closeSettings();
@@ -340,6 +358,7 @@ function openSettings() {
     webhookInput.value    = localStorage.getItem('webhookUrl') || '';
     backendUrlInput.value = localStorage.getItem('brainwaveBackendUrl') || '';
     langSelect.value      = localStorage.getItem('recognitionLang') || '';
+    if (handsFreeToggle) handsFreeToggle.checked = handsFreeEnabled;
     modalOverlay.hidden   = false;
     webhookInput.focus();
 }
@@ -426,6 +445,8 @@ function startQuickMode() {
         return;
     }
     hideTranscriptBar();
+    // Stop wake word listener if running (can't run both concurrently)
+    if (wakeWordListening) stopWakeWordListening();
     try {
         recognition.start();
     } catch (e) {
@@ -464,15 +485,123 @@ function finishQuickRecording() {
     if (text) {
         showTranscriptBar(text, 'quick');
     }
+
+    // Resume hands-free wake word listening
+    if (handsFreeEnabled) {
+        setTimeout(startWakeWordListening, 400);
+    }
 }
 
 quickBtn.addEventListener('click', () => {
+    haptic(50);
     if (isListening) {
         stopQuickMode();
     } else if (!isBrainstormRecording && !isBrainstormProcessing && !isReplaying) {
         startQuickMode();
     }
 });
+
+/* ===================================================
+   WAKE WORD DETECTION — always-on "Hey Chill" listener
+   =================================================== */
+
+function matchesWakeWord(text) {
+    const t = text.toLowerCase().trim();
+    // Fuzzy patterns: "hey chill", "hey chil", "a chill", "hay chill", etc.
+    return /\b(hey|hay|a)\s+chil{1,2}\b/.test(t);
+}
+
+function initWakeRecognition() {
+    if (!SpeechRecognition) return;
+
+    wakeRecognition = new SpeechRecognition();
+    wakeRecognition.continuous      = true;
+    wakeRecognition.interimResults  = true;
+    wakeRecognition.lang            = getRecognitionLang();
+    wakeRecognition.maxAlternatives = 3;
+
+    wakeRecognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            for (let j = 0; j < result.length; j++) {
+                if (matchesWakeWord(result[j].transcript)) {
+                    handleWakeWordDetected();
+                    return;
+                }
+            }
+        }
+    };
+
+    wakeRecognition.onerror = (event) => {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+            console.warn('Wake word mic denied:', event.error);
+            wakeWordListening = false;
+            updateWakeDot();
+            return;
+        }
+        // Transient error — will be restarted by onend handler
+    };
+
+    wakeRecognition.onend = () => {
+        wakeWordListening = false;
+        updateWakeDot();
+        // Auto-restart when not in an active mode
+        if (handsFreeEnabled && !isListening && !isBrainstormRecording && !isBrainstormProcessing) {
+            setTimeout(startWakeWordListening, 300);
+        }
+    };
+}
+
+function startWakeWordListening() {
+    if (!SpeechRecognition || !handsFreeEnabled) return;
+    if (isListening || isBrainstormRecording || isBrainstormProcessing) return;
+    if (wakeWordListening) return;
+
+    if (!wakeRecognition) initWakeRecognition();
+
+    try {
+        wakeRecognition.start();
+        wakeWordListening = true;
+        updateWakeDot();
+    } catch (e) {
+        console.warn('Could not start wake recognition:', e);
+        wakeWordListening = false;
+        // Re-init and try once more next cycle
+        initWakeRecognition();
+    }
+}
+
+function stopWakeWordListening() {
+    wakeWordListening = false;
+    updateWakeDot();
+    if (wakeRecognition) {
+        try { wakeRecognition.stop(); } catch (_) {}
+    }
+}
+
+function handleWakeWordDetected() {
+    stopWakeWordListening();
+    if (!isListening && !isBrainstormRecording && !isBrainstormProcessing && !isReplaying) {
+        haptic(50);
+        startQuickMode();
+    }
+}
+
+function updateWakeDot() {
+    if (!wakeDot) return;
+    wakeDot.hidden = !(handsFreeEnabled && wakeWordListening);
+}
+
+function setHandsFree(enabled) {
+    handsFreeEnabled = enabled;
+    localStorage.setItem('handsFreeEnabled', enabled ? '1' : '0');
+    if (enabled) {
+        startWakeWordListening();
+    } else {
+        stopWakeWordListening();
+    }
+    updateWakeDot();
+}
 
 /* ===================================================
    BRAINSTORM MODE — WebSocket + PCM16 audio streaming
@@ -549,6 +678,10 @@ function initializeWebSocket() {
                         if (finalText) {
                             showTranscriptBar(finalText, 'brainstorm');
                         }
+                        // Resume hands-free after brainstorm completes
+                        if (handsFreeEnabled) {
+                            setTimeout(startWakeWordListening, 400);
+                        }
                     }
                 }
                 break;
@@ -576,6 +709,9 @@ function initializeWebSocket() {
                 hideLiveTranscript();
                 brainstormTranscript = '';
                 updateReplayButtonState();
+                if (handsFreeEnabled) {
+                    setTimeout(startWakeWordListening, 400);
+                }
                 break;
         }
     };
@@ -663,6 +799,9 @@ async function startBrainstormRecording() {
         alert('WebSocket is not connected. Please wait or check the backend URL in Settings.');
         return;
     }
+
+    // Pause wake word listening while brainstorm is active
+    if (wakeWordListening) stopWakeWordListening();
 
     try {
         brainstormTranscript = '';
@@ -768,6 +907,7 @@ async function stopBrainstormRecording() {
 }
 
 brainstormBtn.addEventListener('click', () => {
+    haptic(50);
     if (isBrainstormRecording) {
         stopBrainstormRecording();
     } else if (!isListening && !isBrainstormProcessing && !isReplaying) {
@@ -1057,6 +1197,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         quickBtn.title      = 'Speech recognition not supported in this browser';
     } else {
         initRecognition();
+        initWakeRecognition();
+
+        // Restore hands-free setting
+        handsFreeEnabled = localStorage.getItem('handsFreeEnabled') === '1';
+        if (handsFreeEnabled) {
+            startWakeWordListening();
+        }
     }
 
     initializeWebSocket();
