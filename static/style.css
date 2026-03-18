@@ -89,32 +89,6 @@ html, body {
   gap: 8px;
 }
 
-/* Model selector in header */
-.model-select {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
-  padding: 5px 8px;
-  font-family: inherit;
-  cursor: pointer;
-  max-width: 72px;
-  transition: border-color var(--transition), color var(--transition);
-  appearance: none;
-  -webkit-appearance: none;
-}
-
-.model-select:focus {
-  outline: none;
-  border-color: var(--accent-2);
-  color: var(--text);
-}
-
-.model-select option {
-  background: var(--bg-2);
-  color: var(--text);
-}
 
 .icon-btn {
   background: var(--surface);
