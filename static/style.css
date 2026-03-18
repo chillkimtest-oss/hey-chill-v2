@@ -369,7 +369,14 @@ html, body {
   text-align: center;
 }
 
-/* Replay button */
+/* Replay controls wrapper */
+.replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Replay (play/pause) button */
 .replay-btn {
   width: 44px;
   height: 44px;
@@ -381,13 +388,15 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition);
+  transition: background var(--transition), color var(--transition),
+              border-color var(--transition), box-shadow var(--transition);
   flex-shrink: 0;
 }
 
-.replay-btn svg {
-  width: 13px;
-  height: 13px;
+.replay-btn .replay-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 .replay-btn:hover:not(:disabled) {
@@ -395,13 +404,96 @@ html, body {
   color: var(--text);
 }
 
+.replay-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .replay-btn:disabled {
-  opacity: 0.35;
+  opacity: 0.28;
   cursor: not-allowed;
 }
 
-.replay-btn.replaying {
-  animation: spin 1s linear infinite;
+/* "Has recording" state — slightly brighter when a recording is available */
+.replay-btn[data-state="available"]:not(:disabled) {
+  color: rgba(163, 121, 221, 0.8);
+  border-color: rgba(163, 121, 221, 0.3);
+}
+
+.replay-btn[data-state="available"]:hover:not(:disabled) {
+  background: rgba(163, 121, 221, 0.12);
+  color: rgba(163, 121, 221, 1);
+  border-color: rgba(163, 121, 221, 0.5);
+}
+
+/* Playing state */
+.replay-btn.replay-playing {
+  color: rgba(163, 121, 221, 1);
+  border-color: rgba(163, 121, 221, 0.5);
+  background: rgba(163, 121, 221, 0.12);
+  box-shadow: 0 0 0 3px rgba(163, 121, 221, 0.15);
+  animation: replay-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes replay-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(163, 121, 221, 0.15); }
+  50%       { box-shadow: 0 0 0 5px rgba(163, 121, 221, 0.28); }
+}
+
+/* Stop button */
+.stop-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), color var(--transition),
+              opacity var(--transition);
+  flex-shrink: 0;
+  animation: fade-in 0.15s ease;
+}
+
+.stop-btn svg {
+  width: 11px;
+  height: 11px;
+}
+
+.stop-btn:hover {
+  background: var(--surface-hover);
+  color: var(--accent);
+  border-color: rgba(233, 69, 96, 0.3);
+}
+
+.stop-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Progress bar under brainstorm meta */
+.replay-progress-wrap {
+  width: 100%;
+  padding: 0 4px;
+  animation: fade-in 0.2s ease;
+}
+
+.replay-progress-track {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.replay-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(163, 121, 221, 0.7), rgba(163, 121, 221, 1));
+  border-radius: 2px;
+  transition: width 0.1s linear;
 }
 
 /* WebSocket status dot */
