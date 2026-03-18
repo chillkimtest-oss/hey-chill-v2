@@ -351,6 +351,10 @@ saveSettings.addEventListener('click', () => {
         setHandsFree(newHandsFree);
     }
 
+    if (modelSelect) {
+        localStorage.setItem('brainstormModel', modelSelect.value);
+    }
+
     closeSettings();
 });
 
@@ -359,6 +363,7 @@ function openSettings() {
     backendUrlInput.value = localStorage.getItem('brainwaveBackendUrl') || '';
     langSelect.value      = localStorage.getItem('recognitionLang') || '';
     if (handsFreeToggle) handsFreeToggle.checked = handsFreeEnabled;
+    if (modelSelect) modelSelect.value = localStorage.getItem('brainstormModel') || 'gpt-realtime-mini-2025-12-15';
     modalOverlay.hidden   = false;
     webhookInput.focus();
 }
@@ -1204,6 +1209,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (handsFreeEnabled) {
             startWakeWordListening();
         }
+    }
+
+    // Restore brainstorm model selection
+    if (modelSelect) {
+        modelSelect.value = localStorage.getItem('brainstormModel') || 'gpt-realtime-mini-2025-12-15';
     }
 
     initializeWebSocket();

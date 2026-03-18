@@ -24,10 +24,6 @@
         <span class="wake-dot" id="wake-dot" hidden title="Listening for 'Hey Chill'"></span>
       </div>
       <div class="header-actions">
-        <select id="modelSelect" class="model-select" title="Brainstorm model">
-          <option value="gpt-realtime-mini-2025-12-15" selected>Mini</option>
-          <option value="gpt-realtime-1.5">v1.5</option>
-        </select>
         <button class="icon-btn" id="settings-btn" aria-label="Settings" title="Settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"/>
@@ -165,6 +161,13 @@
           </span>
         </label>
         <p class="field-hint">Always listen for "Hey Chill" to start Quick mode automatically.</p>
+
+        <label for="modelSelect">Brainstorm model</label>
+        <select id="modelSelect">
+          <option value="gpt-realtime-mini-2025-12-15" selected>Mini</option>
+          <option value="gpt-realtime-1.5">v1.5</option>
+        </select>
+        <p class="field-hint">Model used for Brainstorm mode transcription.</p>
 
         <label for="webhook-url">Webhook URL</label>
         <input type="url" id="webhook-url"
