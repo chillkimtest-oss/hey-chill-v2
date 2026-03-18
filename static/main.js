@@ -20,6 +20,16 @@ let streamInitialized      = false;
 let brainstormTranscript   = '';
 let _awaitingBrainstormResult = false;
 
+/* ===== LOCAL AUDIO PLAYBACK STATE ===== */
+let replayAudioCtx    = null;  // dedicated AudioContext for playback
+let replayAudioSource = null;  // current AudioBufferSourceNode
+let replayAudioBuf    = null;  // decoded AudioBuffer for the loaded recording
+let replayDuration    = 0;     // total duration in seconds
+let replayPauseOffset = 0;     // seconds already played before the current segment
+let replayStartedAt   = 0;     // replayAudioCtx.currentTime when current segment started
+let replayRAF         = null;  // requestAnimationFrame id for progress updates
+let isPlayingBack     = false; // true while audio is actively playing
+
 /* ===== WAKE WORD / HANDS-FREE STATE ===== */
 let wakeRecognition   = null;
 let wakeWordListening = false;
@@ -51,9 +61,12 @@ const sendBtn          = document.getElementById('send-btn');
 const discardBtn       = document.getElementById('discard-btn');
 const messagesEl       = document.getElementById('messages');
 const messagesEmpty    = document.getElementById('messages-empty');
-const timerEl          = document.getElementById('timer');
-const replayButton     = document.getElementById('replayButton');
-const connectionStatus = document.getElementById('connectionStatus');
+const timerEl           = document.getElementById('timer');
+const replayButton      = document.getElementById('replayButton');
+const stopButton        = document.getElementById('stopButton');
+const replayProgressWrap = document.getElementById('replay-progress-wrap');
+const replayProgressFill = document.getElementById('replay-progress-fill');
+const connectionStatus  = document.getElementById('connectionStatus');
 const notSupported     = document.getElementById('not-supported');
 const settingsBtn      = document.getElementById('settings-btn');
 const modalOverlay     = document.getElementById('modal-overlay');
@@ -450,6 +463,8 @@ function startQuickMode() {
         return;
     }
     hideTranscriptBar();
+    // Stop any active local playback
+    if (isPlayingBack) stopLocalPlayback();
     // Stop wake word listener if running (can't run both concurrently)
     if (wakeWordListening) stopWakeWordListening();
     try {
@@ -808,6 +823,9 @@ async function startBrainstormRecording() {
     // Pause wake word listening while brainstorm is active
     if (wakeWordListening) stopWakeWordListening();
 
+    // Stop any active local playback
+    if (isPlayingBack) stopLocalPlayback();
+
     try {
         brainstormTranscript = '';
         hideTranscriptBar();
@@ -902,6 +920,7 @@ async function stopBrainstormRecording() {
         currentSessionId  = null;
         sessionStartTime  = null;
         chunkSeq          = 0;
+        invalidateReplayBuffer();
     }
 
     // Switch to processing state — WS idle handler will finish the flow
@@ -921,82 +940,173 @@ brainstormBtn.addEventListener('click', () => {
 });
 
 /* ===================================================
-   REPLAY — sends stored IndexedDB audio through WS
+   REPLAY — local audio playback of stored recording
    =================================================== */
 
-async function replayLastRecording() {
-    if (isBrainstormRecording || isReplaying || isListening || isBrainstormProcessing) return;
-
+/** Assemble PCM16 chunks from IndexedDB into a Web Audio AudioBuffer. */
+async function buildReplayAudioBuffer() {
     const session = await getLatestCompletedSession();
-    if (!session) {
-        alert('No completed recording found to replay.');
+    if (!session) return null;
+    const chunks      = await getSessionChunks(session.id);
+    const audioChunks = chunks.filter(c => c.kind === 'audio' && c.payload);
+    if (audioChunks.length === 0) return null;
+
+    const SAMPLE_RATE = session.sampleRate || 24000;
+    let totalSamples  = 0;
+    for (const chunk of audioChunks) totalSamples += new Int16Array(chunk.payload).length;
+
+    // AudioBuffer constructor (Chrome 55+, FF 53+, Safari 14.1+)
+    const audioBuf    = new AudioBuffer({ numberOfChannels: 1, length: totalSamples, sampleRate: SAMPLE_RATE });
+    const channelData = audioBuf.getChannelData(0);
+    let offset = 0;
+    for (const chunk of audioChunks) {
+        const pcm = new Int16Array(chunk.payload);
+        for (let i = 0; i < pcm.length; i++) channelData[offset++] = pcm[i] / 32768;
+    }
+    return audioBuf;
+}
+
+function _replaySetPlayIcon(playing) {
+    const playIcon  = replayButton.querySelector('.replay-icon-play');
+    const pauseIcon = replayButton.querySelector('.replay-icon-pause');
+    if (playIcon)  playIcon.hidden  = playing;
+    if (pauseIcon) pauseIcon.hidden = !playing;
+}
+
+function _replayTickProgress() {
+    if (!isPlayingBack || !replayAudioCtx) return;
+    const elapsed = (replayAudioCtx.currentTime - replayStartedAt) + replayPauseOffset;
+    const pct = replayDuration > 0 ? Math.min(elapsed / replayDuration, 1) : 0;
+    if (replayProgressFill) replayProgressFill.style.width = (pct * 100).toFixed(2) + '%';
+    if (pct < 1) replayRAF = requestAnimationFrame(_replayTickProgress);
+}
+
+async function _ensureReplayAudioCtx() {
+    if (!replayAudioCtx || replayAudioCtx.state === 'closed') {
+        replayAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (replayAudioCtx.state === 'suspended') await replayAudioCtx.resume();
+}
+
+function _replayOnEnded() {
+    isPlayingBack     = false;
+    isReplaying       = false;
+    replayAudioSource = null;
+    replayPauseOffset = 0;
+    replayStartedAt   = 0;
+    cancelAnimationFrame(replayRAF);
+    if (replayProgressFill) replayProgressFill.style.width = '0%';
+    _replaySetPlayIcon(false);
+    stopButton.hidden = true;
+    replayButton.classList.remove('replay-playing');
+    if (replayProgressWrap) replayProgressWrap.hidden = true;
+    updateReplayButtonState();
+}
+
+async function toggleLocalPlayback() {
+    if (isBrainstormRecording || isListening || isBrainstormProcessing) return;
+
+    if (isPlayingBack) {
+        // Pause: record elapsed time and stop source
+        replayPauseOffset += replayAudioCtx.currentTime - replayStartedAt;
+        if (replayAudioSource) {
+            replayAudioSource.onended = null;
+            replayAudioSource.stop();
+            replayAudioSource = null;
+        }
+        cancelAnimationFrame(replayRAF);
+        isPlayingBack = false;
+        isReplaying   = false;
+        _replaySetPlayIcon(false);
+        replayButton.classList.remove('replay-playing');
+        replayButton.title = 'Resume playback';
         return;
     }
 
-    isReplaying              = true;
-    quickBtn.disabled        = true;
-    brainstormBtn.disabled   = true;
-    replayButton.disabled    = true;
-    replayButton.classList.add('replaying');
-    brainstormTranscript     = '';
+    // Load buffer on first play (or after stop cleared it)
+    if (!replayAudioBuf) {
+        replayButton.disabled = true;
+        replayButton.title    = 'Loading…';
+        try {
+            replayAudioBuf = await buildReplayAudioBuffer();
+        } catch (e) {
+            console.error('Failed to build audio buffer:', e);
+            replayButton.disabled = false;
+            updateReplayButtonState();
+            return;
+        }
+        if (!replayAudioBuf) {
+            updateReplayButtonState();
+            return;
+        }
+        replayDuration = replayAudioBuf.duration;
+    }
+
+    // Restart from beginning if we've reached the end
+    if (replayPauseOffset >= replayDuration) {
+        replayPauseOffset = 0;
+        if (replayProgressFill) replayProgressFill.style.width = '0%';
+    }
 
     try {
-        hideTranscriptBar();
-        const chunks = await getSessionChunks(session.id);
-        if (chunks.length === 0) throw new Error('No audio chunks found for session');
+        await _ensureReplayAudioCtx();
+        const src = replayAudioCtx.createBufferSource();
+        src.buffer = replayAudioBuf;
+        src.connect(replayAudioCtx.destination);
+        src.onended = _replayOnEnded;
 
-        // Wait for WS if needed
-        if (!wsConnected || ws.readyState !== WebSocket.OPEN) {
-            await new Promise(resolve => {
-                const check = setInterval(() => {
-                    if (wsConnected && ws.readyState === WebSocket.OPEN) { clearInterval(check); resolve(); }
-                }, 100);
-            });
-        }
+        replayAudioSource = src;
+        replayStartedAt   = replayAudioCtx.currentTime;
+        isPlayingBack     = true;
+        isReplaying       = true;
 
-        const selectedModel = modelSelect ? modelSelect.value : 'gpt-realtime-mini-2025-12-15';
-        ws.send(JSON.stringify({ type: 'start_recording', model: selectedModel }));
-        await new Promise(resolve => setTimeout(resolve, 200));
+        src.start(0, replayPauseOffset);
 
-        for (const chunk of chunks.filter(c => c.kind === 'audio' && c.payload)) {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(chunk.payload);
-            } else {
-                throw new Error('WebSocket closed during replay');
-            }
-        }
-
-        ws.send(JSON.stringify({ type: 'stop_recording' }));
-
-        isBrainstormProcessing    = true;
-        _awaitingBrainstormResult = true;
-        micHint.textContent       = 'Processing replay…';
-        micHint.classList.add('active', 'processing');
-        micHint.classList.remove('brainstorm-active');
-        showLiveTranscript('Processing replay…', 'brainstorm');
-
-    } catch (error) {
-        console.error('Replay error:', error);
-        alert('Error replaying recording: ' + error.message);
-        isBrainstormProcessing    = false;
-        _awaitingBrainstormResult = false;
-        micHint.textContent       = '';
-        micHint.classList.remove('active', 'processing');
-        quickBtn.disabled        = false;
-        brainstormBtn.disabled   = false;
-    } finally {
-        isReplaying = false;
-        replayButton.classList.remove('replaying');
+        _replaySetPlayIcon(true);
+        replayButton.classList.add('replay-playing');
+        replayButton.disabled = false;
+        replayButton.title    = 'Pause playback';
+        stopButton.hidden     = false;
+        if (replayProgressWrap) replayProgressWrap.hidden = false;
+        replayRAF = requestAnimationFrame(_replayTickProgress);
+    } catch (e) {
+        console.error('Playback error:', e);
+        isPlayingBack = false;
+        isReplaying   = false;
         updateReplayButtonState();
-        // quickBtn/brainstormBtn re-enabled by WS idle handler if processing started
-        if (!isBrainstormProcessing) {
-            quickBtn.disabled      = false;
-            brainstormBtn.disabled = false;
-        }
     }
 }
 
-replayButton.onclick = replayLastRecording;
+function stopLocalPlayback() {
+    if (replayAudioSource) {
+        replayAudioSource.onended = null;
+        try { replayAudioSource.stop(); } catch (_) {}
+        replayAudioSource = null;
+    }
+    cancelAnimationFrame(replayRAF);
+    isPlayingBack     = false;
+    isReplaying       = false;
+    replayPauseOffset = 0;  // reset to start; buffer stays cached for fast re-play
+    if (replayProgressFill) replayProgressFill.style.width = '0%';
+    _replaySetPlayIcon(false);
+    if (replayProgressWrap) replayProgressWrap.hidden = true;
+    stopButton.hidden = true;
+    replayButton.classList.remove('replay-playing');
+    replayButton.title = 'Play last recording';
+    updateReplayButtonState();
+}
+
+/** Called when a new recording is completed — invalidate the cached buffer. */
+function invalidateReplayBuffer() {
+    replayAudioBuf = null;
+    if (!isPlayingBack) {
+        replayPauseOffset = 0;
+        if (replayProgressFill) replayProgressFill.style.width = '0%';
+    }
+}
+
+replayButton.onclick = toggleLocalPlayback;
+stopButton.onclick   = stopLocalPlayback;
 
 function updateReplayButtonState() {
     if (!replayButton) return;
@@ -1006,16 +1116,27 @@ function updateReplayButtonState() {
         replayButton.title    = 'Local storage not available';
         return;
     }
-    if (isBrainstormRecording || isReplaying || isListening || isBrainstormProcessing) {
+    if (isBrainstormRecording || isListening || isBrainstormProcessing) {
         replayButton.disabled = true;
+        stopButton.hidden     = true;
+        return;
+    }
+    if (isPlayingBack) {
+        replayButton.disabled = false;
+        replayButton.title    = 'Pause playback';
         return;
     }
 
     getLatestCompletedSession().then(session => {
-        if (!isReplaying) {
+        if (!isPlayingBack) {
             replayButton.disabled = !session;
-            replayButton.title    = session ? 'Replay last recording' : 'No recording to replay';
-            replayButton.classList.remove('replaying');
+            if (session) {
+                replayButton.title         = replayPauseOffset > 0 ? 'Resume playback' : 'Play last recording';
+                replayButton.dataset.state = 'available';
+            } else {
+                replayButton.title         = 'No recording to replay';
+                replayButton.dataset.state = '';
+            }
         }
     });
 }
