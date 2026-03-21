@@ -40,6 +40,9 @@ const urlParams   = new URLSearchParams(window.location.search);
 const autoStart   = urlParams.get('start') === '1';
 let   isAutoStarted = false;
 
+/* ===== CARD STACK STATE ===== */
+let lastRecordingDurationMs = 0; // stored when recording stops, used for card metadata
+
 /* ===== INDEXEDDB STATE ===== */
 let db              = null;
 let currentSessionId = null;
@@ -78,6 +81,11 @@ const saveSettings     = document.getElementById('save-settings');
 const modelSelect      = document.getElementById('modelSelect');
 const handsFreeToggle  = document.getElementById('hands-free-toggle');
 const wakeDot          = document.getElementById('wake-dot');
+
+/* ===== CARD STACK DOM REFS ===== */
+const cardStackView = document.getElementById('card-stack-view');
+const csCards       = document.getElementById('cs-cards');
+const csBackBtn     = document.getElementById('cs-back-btn');
 
 /* ===== POST-PROCESSING DOM REFS ===== */
 const postprocessBar           = document.getElementById('postprocess-bar');
@@ -181,6 +189,123 @@ function hideTranscriptBar() {
     postprocessResultActions.hidden = true;
     postprocessText.textContent = '';
 }
+
+/* ===== CARD STACK ===== */
+
+/** Build a single card element and append it to cs-cards. */
+function buildCard({ type, label, text, meta }) {
+    const words    = text.trim().split(/\s+/);
+    const preview  = words.slice(0, 15).join(' ') + (words.length > 15 ? '…' : '');
+
+    const card = document.createElement('div');
+    card.className = 'cs-card';
+    card.dataset.type = type;
+    card.setAttribute('role', 'listitem');
+
+    card.innerHTML = `
+      <div class="cs-card-header" role="button" tabindex="0"
+           aria-expanded="false" aria-controls="cs-body-${type}">
+        <span class="cs-card-label">${escapeHtml(label)}</span>
+        <span class="cs-card-preview">${escapeHtml(preview)}</span>
+        <span class="cs-card-chevron" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </span>
+      </div>
+      <div class="cs-card-body" id="cs-body-${type}" role="region">
+        <div class="cs-card-body-inner">
+          <div class="cs-card-meta">
+            ${meta.map(m => `<span>${escapeHtml(m)}</span>`).join('')}
+          </div>
+          <div class="cs-card-text">${escapeHtml(text)}</div>
+          <div class="cs-card-actions">
+            <button class="cs-action-btn" data-action="readability" disabled>Readability</button>
+            <button class="cs-action-btn" data-action="inspire" disabled>Inspire</button>
+            <button class="cs-action-btn" data-action="copy" disabled>Copy</button>
+            <button class="cs-action-btn" data-action="send" disabled>Send</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const header = card.querySelector('.cs-card-header');
+
+    function toggleCard() {
+        const isExpanded = card.classList.contains('cs-expanded');
+        // Collapse all other cards (accordion)
+        csCards.querySelectorAll('.cs-card.cs-expanded').forEach(c => {
+            if (c !== card) {
+                c.classList.remove('cs-expanded');
+                c.querySelector('.cs-card-header').setAttribute('aria-expanded', 'false');
+            }
+        });
+        card.classList.toggle('cs-expanded', !isExpanded);
+        header.setAttribute('aria-expanded', String(!isExpanded));
+    }
+
+    header.addEventListener('click', toggleCard);
+    header.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCard(); }
+    });
+
+    return card;
+}
+
+/** Formats milliseconds as "m:ss" duration string. */
+function formatDuration(ms) {
+    const totalSecs = Math.round(ms / 1000);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+/** Show the Card Stack view with the given brainstorm transcript. */
+function showCardStack(text, durationMs) {
+    // Clear previous cards
+    csCards.innerHTML = '';
+
+    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+    const durationStr = durationMs > 0 ? formatDuration(durationMs) : null;
+    const meta = [
+        durationStr ? `${durationStr}` : null,
+        `${wordCount} word${wordCount !== 1 ? 's' : ''}`,
+    ].filter(Boolean);
+
+    const card = buildCard({ type: 'transcript', label: 'Transcript', text, meta });
+    csCards.appendChild(card);
+
+    // Start expanded since it's the only card
+    card.classList.add('cs-expanded');
+    card.querySelector('.cs-card-header').setAttribute('aria-expanded', 'true');
+
+    // Slide in
+    cardStackView.hidden = false;
+    // Force a reflow so the transition fires
+    void cardStackView.offsetWidth;
+    cardStackView.classList.add('cs-visible');
+}
+
+/** Hide the Card Stack view and return to main screen. */
+function hideCardStack() {
+    cardStackView.classList.remove('cs-visible');
+    // Wait for the slide-out animation, then hide
+    cardStackView.addEventListener('transitionend', function onEnd() {
+        cardStackView.removeEventListener('transitionend', onEnd);
+        cardStackView.hidden = true;
+        csCards.innerHTML = '';
+    }, { once: true });
+}
+
+/** Immediately hide the card stack without animation (used when recording restarts). */
+function hideCardStackInstant() {
+    cardStackView.classList.remove('cs-visible');
+    cardStackView.hidden = true;
+    csCards.innerHTML = '';
+}
+
+csBackBtn.addEventListener('click', hideCardStack);
 
 /* ===== MESSAGE HISTORY ===== */
 function addMessage(text, timestamp, status) {
@@ -696,7 +821,7 @@ function initializeWebSocket() {
                         const finalText = brainstormTranscript.trim();
                         brainstormTranscript = '';
                         if (finalText) {
-                            showTranscriptBar(finalText, 'brainstorm');
+                            showCardStack(finalText, lastRecordingDurationMs);
                         }
                         // Resume hands-free after brainstorm completes
                         if (handsFreeEnabled) {
@@ -829,6 +954,7 @@ async function startBrainstormRecording() {
     try {
         brainstormTranscript = '';
         hideTranscriptBar();
+        hideCardStackInstant();
 
         // Re-use existing stream if still alive, else reinit
         let streamActive = false;
@@ -878,9 +1004,10 @@ async function startBrainstormRecording() {
 async function stopBrainstormRecording() {
     if (!isBrainstormRecording) return;
 
-    isStopping            = true;
-    isBrainstormRecording = false;
-    const durationMs      = sessionStartTime ? performance.now() - sessionStartTime : 0;
+    isStopping               = true;
+    isBrainstormRecording    = false;
+    const durationMs         = sessionStartTime ? performance.now() - sessionStartTime : 0;
+    lastRecordingDurationMs  = durationMs;
 
     stopTimer();
     brainstormBtn.classList.remove('recording');

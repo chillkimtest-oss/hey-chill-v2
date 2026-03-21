@@ -149,6 +149,21 @@
 
   </div><!-- #app -->
 
+  <!-- Card Stack View (full-screen, slides in after brainstorm recording stops) -->
+  <div class="card-stack-view" id="card-stack-view" hidden aria-label="Brainstorm results">
+    <div class="cs-header">
+      <button class="cs-back-btn" id="cs-back-btn" aria-label="Back to main screen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        Back
+      </button>
+      <h2 class="cs-title">Brainstorm</h2>
+    </div>
+    <div class="cs-cards" id="cs-cards" role="list"></div>
+  </div>
+
   <!-- Settings Modal -->
   <div class="modal-overlay" id="modal-overlay" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
