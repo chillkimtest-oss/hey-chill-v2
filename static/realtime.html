@@ -225,6 +225,10 @@
         .catch(function(err) { console.warn('SW registration failed:', err); });
     }
   </script>
+  <!-- onnxruntime-web: exposes window.ort for local wake word inference -->
+  <script src="static/ort.min.js"></script>
+  <!-- openWakeWord engine: exposes window.WakeWordEngine -->
+  <script src="static/openwakeword-engine.js"></script>
   <script src="static/main.js"></script>
 </body>
 </html>
