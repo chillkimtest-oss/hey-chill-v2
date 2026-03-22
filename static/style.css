@@ -1302,3 +1302,172 @@ html, body {
     max-height: 800px;
   }
 }
+
+/* ===== Responsive Polish (FRG-265) ===== */
+
+/* --- Touch targets: raise to 44px minimum --- */
+
+/* Stop button (was 32px) */
+.stop-btn {
+  width: 44px;
+  height: 44px;
+}
+
+/* Card Stack action buttons (was 40px) */
+.cs-action-btn {
+  min-height: 44px;
+}
+
+/* --- Settings modal: flex layout for constrained + scrollable body --- */
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 90dvh;
+}
+
+.modal-header,
+.modal-footer {
+  flex-shrink: 0;
+}
+
+.modal-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  flex: 1 1 auto;
+}
+
+/* Modal footer: respect home-bar safe area when acting as bottom sheet */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .modal-footer {
+    padding-bottom: max(24px, calc(12px + env(safe-area-inset-bottom)));
+  }
+}
+
+/* --- Card Stack View: horizontal safe area (landscape notch) --- */
+
+@supports (padding: env(safe-area-inset-left)) {
+  .card-stack-view {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* --- iPad: widen content column to ~540px --- */
+
+@media (min-width: 768px) {
+  #app {
+    max-width: 540px;
+  }
+}
+
+/* --- Small screens (≤375px): tighter horizontal margins --- */
+
+@media (max-width: 375px) {
+  .messages {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .transcript-bar,
+  .live-transcript,
+  .not-supported {
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+
+  .mic-section {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  /* Reduce gap between the two mic buttons on very narrow screens */
+  .mic-buttons {
+    gap: 16px;
+  }
+}
+
+/* --- Landscape compact layout (height ≤ 500px, e.g. phone landscape) --- */
+
+@media (orientation: landscape) and (max-height: 500px) {
+  /* Compact header — override default + @supports safe-area padding */
+  .header {
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    padding-bottom: 8px;
+    padding-left: calc(16px + env(safe-area-inset-left, 0px));
+    padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  }
+
+  .header h1 {
+    font-size: 1rem;
+  }
+
+  /* Compact messages area */
+  .messages {
+    padding: 8px 16px;
+    gap: 6px;
+  }
+
+  /* Compact mic section — override default + @supports safe-area padding */
+  .mic-section {
+    padding-top: 6px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(16px + env(safe-area-inset-left, 0px));
+    padding-right: calc(16px + env(safe-area-inset-right, 0px));
+    gap: 6px;
+  }
+
+  /* Shrink mic buttons for compact landscape layout */
+  .mic-buttons .mic-ring {
+    width: 80px;
+    height: 80px;
+  }
+
+  .mic-buttons .mic-btn {
+    width: 60px;
+    height: 60px;
+  }
+
+  .mic-buttons .mic-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .mic-hint {
+    font-size: 0.8rem;
+  }
+
+  /* Compact card stack header — override default + @supports safe-area */
+  .cs-header {
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    padding-bottom: 8px;
+    padding-left: calc(16px + env(safe-area-inset-left, 0px));
+    padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  }
+
+  /* Compact card list with safe-area-aware left/right padding */
+  .cs-cards {
+    padding: 10px
+             calc(12px + env(safe-area-inset-right, 0px))
+             16px
+             calc(12px + env(safe-area-inset-left, 0px));
+    gap: 6px;
+  }
+
+  /* Shrink modal further in landscape */
+  .modal {
+    max-height: 85dvh;
+  }
+
+  .modal-header {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .modal-body {
+    padding-top: 12px;
+    padding-bottom: 12px;
+    gap: 6px;
+  }
+}
