@@ -997,3 +997,294 @@ html, body {
   padding-top: 10px;
   border-top: 1px solid var(--border);
 }
+
+/* ===== Card Stack View ===== */
+.card-stack-view {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  z-index: 90;
+  transform: translateX(100%);
+  transition: transform 0.3s ease-out;
+}
+
+.card-stack-view[hidden] {
+  display: none;
+}
+
+.card-stack-view.cs-visible {
+  transform: translateX(0);
+}
+
+/* Safe area insets for notched phones */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .card-stack-view {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Header bar */
+.cs-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+@supports (padding: env(safe-area-inset-top)) {
+  .cs-header {
+    padding-top: calc(16px + env(safe-area-inset-top));
+  }
+}
+
+.cs-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 6px 0;
+  min-height: 44px;
+  transition: opacity var(--transition);
+  flex-shrink: 0;
+}
+
+.cs-back-btn:hover { opacity: 0.75; }
+
+.cs-back-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.cs-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Scrollable card list */
+.cs-cards {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.cs-cards::-webkit-scrollbar       { width: 4px; }
+.cs-cards::-webkit-scrollbar-track { background: transparent; }
+.cs-cards::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Individual card */
+.cs-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  border-left: 4px solid var(--cs-card-color, var(--border));
+  overflow: hidden;
+}
+
+/* Card type colour tokens */
+.cs-card[data-type="transcript"] { --cs-card-color: rgba(163, 121, 221, 0.85); }
+.cs-card[data-type="readability"] { --cs-card-color: #00b4d8; }
+.cs-card[data-type="inspire"]     { --cs-card-color: var(--accent); }
+
+/* Card header — always visible, clickable */
+.cs-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  min-height: 56px;
+}
+
+.cs-card-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.cs-card-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cs-card-color, var(--text-muted));
+  flex-shrink: 0;
+}
+
+.cs-card-preview {
+  flex: 1;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-card-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.3s ease-out;
+}
+
+.cs-card-chevron svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.cs-card.cs-expanded .cs-card-chevron {
+  transform: rotate(180deg);
+}
+
+/* Collapsed card body is hidden via max-height */
+.cs-card-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+}
+
+.cs-card.cs-expanded .cs-card-body {
+  max-height: 600px; /* large enough for typical transcripts */
+}
+
+.cs-card-body-inner {
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Metadata row */
+.cs-card-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 10px 0 8px;
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  letter-spacing: 0.02em;
+}
+
+/* Transcript content with scroll */
+.cs-card-text {
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  padding-right: 4px;
+}
+
+.cs-card-text::-webkit-scrollbar       { width: 3px; }
+.cs-card-text::-webkit-scrollbar-track { background: transparent; }
+.cs-card-text::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Action buttons row */
+.cs-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.cs-action-btn {
+  flex: 1;
+  min-width: 72px;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition),
+              border-color var(--transition);
+  letter-spacing: 0.02em;
+}
+
+.cs-action-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.cs-action-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cs-action-btn[data-action="readability"] {
+  color: #00b4d8;
+  border-color: rgba(0, 180, 216, 0.3);
+  background: rgba(0, 180, 216, 0.08);
+}
+
+.cs-action-btn[data-action="readability"]:hover:not(:disabled) {
+  background: rgba(0, 180, 216, 0.18);
+  border-color: rgba(0, 180, 216, 0.5);
+}
+
+.cs-action-btn[data-action="inspire"] {
+  color: rgba(163, 121, 221, 1);
+  border-color: rgba(163, 121, 221, 0.3);
+  background: rgba(163, 121, 221, 0.08);
+}
+
+.cs-action-btn[data-action="inspire"]:hover:not(:disabled) {
+  background: rgba(163, 121, 221, 0.18);
+  border-color: rgba(163, 121, 221, 0.5);
+}
+
+.cs-action-btn[data-action="send"] {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(233, 69, 96, 0.3);
+}
+
+.cs-action-btn[data-action="send"]:hover:not(:disabled) {
+  background: #ff5c75;
+  box-shadow: 0 2px 14px rgba(233, 69, 96, 0.5);
+}
+
+/* Tablet / iPad responsive adjustments */
+@media (min-width: 600px) {
+  .cs-cards {
+    max-width: 560px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .cs-header {
+    max-width: 560px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .cs-card.cs-expanded .cs-card-body {
+    max-height: 800px;
+  }
+}
