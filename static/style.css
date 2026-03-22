@@ -1270,6 +1270,20 @@ html, body {
   box-shadow: 0 2px 14px rgba(233, 69, 96, 0.5);
 }
 
+/* ===== Card streaming cursor ===== */
+.cs-card-text.cs-streaming::after {
+  content: '▋';
+  display: inline-block;
+  color: var(--text-muted);
+  margin-left: 1px;
+  animation: cs-cursor-blink 0.9s step-end infinite;
+}
+
+@keyframes cs-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
 /* Tablet / iPad responsive adjustments */
 @media (min-width: 600px) {
   .cs-cards {

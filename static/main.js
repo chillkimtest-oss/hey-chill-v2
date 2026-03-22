@@ -42,6 +42,8 @@ let   isAutoStarted = false;
 
 /* ===== CARD STACK STATE ===== */
 let lastRecordingDurationMs = 0; // stored when recording stops, used for card metadata
+let csCardCounter = 0;           // unique IDs for card elements
+let csIsStreaming  = false;       // true while an LLM response is streaming into a card
 
 /* ===== INDEXEDDB STATE ===== */
 let db              = null;
@@ -194,17 +196,25 @@ function hideTranscriptBar() {
 
 /** Build a single card element and append it to cs-cards. */
 function buildCard({ type, label, text, meta }) {
-    const words    = text.trim().split(/\s+/);
+    const words    = text.trim().split(/\s+/).filter(Boolean);
     const preview  = words.slice(0, 15).join(' ') + (words.length > 15 ? '…' : '');
+    const cardId   = `cs-card-${++csCardCounter}`;
 
     const card = document.createElement('div');
     card.className = 'cs-card';
     card.dataset.type = type;
+    card.id = cardId;
     card.setAttribute('role', 'listitem');
+
+    // Only transcript cards get the process buttons (readability / inspire)
+    const processBtns = (type === 'transcript')
+        ? `<button class="cs-action-btn" data-action="readability" disabled>Readability</button>
+            <button class="cs-action-btn" data-action="inspire" disabled>Inspire</button>`
+        : '';
 
     card.innerHTML = `
       <div class="cs-card-header" role="button" tabindex="0"
-           aria-expanded="false" aria-controls="cs-body-${type}">
+           aria-expanded="false" aria-controls="${cardId}-body">
         <span class="cs-card-label">${escapeHtml(label)}</span>
         <span class="cs-card-preview">${escapeHtml(preview)}</span>
         <span class="cs-card-chevron" aria-hidden="true">
@@ -214,15 +224,14 @@ function buildCard({ type, label, text, meta }) {
           </svg>
         </span>
       </div>
-      <div class="cs-card-body" id="cs-body-${type}" role="region">
+      <div class="cs-card-body" id="${cardId}-body" role="region">
         <div class="cs-card-body-inner">
           <div class="cs-card-meta">
             ${meta.map(m => `<span>${escapeHtml(m)}</span>`).join('')}
           </div>
           <div class="cs-card-text">${escapeHtml(text)}</div>
           <div class="cs-card-actions">
-            <button class="cs-action-btn" data-action="readability" disabled>Readability</button>
-            <button class="cs-action-btn" data-action="inspire" disabled>Inspire</button>
+            ${processBtns}
             <button class="cs-action-btn" data-action="copy" disabled>Copy</button>
             <button class="cs-action-btn" data-action="send" disabled>Send</button>
           </div>
@@ -263,8 +272,9 @@ function formatDuration(ms) {
 
 /** Show the Card Stack view with the given brainstorm transcript. */
 function showCardStack(text, durationMs) {
-    // Clear previous cards
+    // Clear previous cards and reset streaming flag
     csCards.innerHTML = '';
+    csIsStreaming = false;
 
     const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
     const durationStr = durationMs > 0 ? formatDuration(durationMs) : null;
@@ -279,6 +289,10 @@ function showCardStack(text, durationMs) {
     // Start expanded since it's the only card
     card.classList.add('cs-expanded');
     card.querySelector('.cs-card-header').setAttribute('aria-expanded', 'true');
+
+    // Wire up action buttons and enable them
+    setupCardActionHandlers(card);
+    updateCardActionStates();
 
     // Slide in
     cardStackView.hidden = false;
@@ -306,6 +320,207 @@ function hideCardStackInstant() {
 }
 
 csBackBtn.addEventListener('click', hideCardStack);
+
+/* ===== CARD STACK ACTIONS ===== */
+
+/** Return the currently expanded card, or null. */
+function getExpandedCard() {
+    return csCards.querySelector('.cs-card.cs-expanded') || null;
+}
+
+/** Disable every action button in the card stack. */
+function disableAllCardActions() {
+    csCards.querySelectorAll('.cs-action-btn').forEach(btn => { btn.disabled = true; });
+}
+
+/**
+ * Re-enable action buttons contextually:
+ * - Hide readability button if a readability card already exists.
+ * - Hide inspire button if an inspire card already exists.
+ * - Enable copy / send on all cards.
+ * Never enables buttons while streaming is active.
+ */
+function updateCardActionStates() {
+    if (csIsStreaming) return;
+
+    const cards = Array.from(csCards.querySelectorAll('.cs-card'));
+    const hasReadability = cards.some(c => c.dataset.type === 'readability');
+    const hasInspire     = cards.some(c => c.dataset.type === 'inspire');
+
+    cards.forEach(card => {
+        const readabilityBtn = card.querySelector('[data-action="readability"]');
+        const inspireBtn     = card.querySelector('[data-action="inspire"]');
+        const copyBtn        = card.querySelector('[data-action="copy"]');
+        const sendBtn        = card.querySelector('[data-action="send"]');
+
+        if (readabilityBtn) {
+            readabilityBtn.hidden   = hasReadability;
+            readabilityBtn.disabled = hasReadability;
+        }
+        if (inspireBtn) {
+            inspireBtn.hidden   = hasInspire;
+            inspireBtn.disabled = hasInspire;
+        }
+        if (copyBtn) copyBtn.disabled = false;
+        if (sendBtn) sendBtn.disabled = false;
+    });
+}
+
+/**
+ * Wire click handlers onto a fully-built card.
+ * Call this once per card after it is appended to the DOM.
+ */
+function setupCardActionHandlers(card) {
+    const textEl         = card.querySelector('.cs-card-text');
+    const readabilityBtn = card.querySelector('[data-action="readability"]');
+    const inspireBtn     = card.querySelector('[data-action="inspire"]');
+    const copyBtn        = card.querySelector('[data-action="copy"]');
+    const sendBtn        = card.querySelector('[data-action="send"]');
+
+    if (readabilityBtn) {
+        readabilityBtn.addEventListener('click', () => {
+            const src = textEl.textContent.trim();
+            if (src) runCardStreamProcess(src, '/api/v1/readability', 'readability', 'Readability');
+        });
+    }
+
+    if (inspireBtn) {
+        inspireBtn.addEventListener('click', () => {
+            const src = textEl.textContent.trim();
+            if (src) runCardStreamProcess(src, '/api/v1/correctness', 'inspire', 'Inspire');
+        });
+    }
+
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            // Copy the expanded (primary) card's text
+            const expanded = getExpandedCard();
+            const target   = expanded
+                ? expanded.querySelector('.cs-card-text').textContent.trim()
+                : textEl.textContent.trim();
+            if (!target) return;
+            const origLabel = copyBtn.textContent;
+            const finish = () => {
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => { copyBtn.textContent = origLabel; }, 2000);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(target).then(finish).catch(() => {
+                    _fallbackCopy(target);
+                    finish();
+                });
+            } else {
+                _fallbackCopy(target);
+                finish();
+            }
+        });
+    }
+
+    if (sendBtn) {
+        sendBtn.addEventListener('click', async () => {
+            // Send the expanded (primary) card's text to Slack webhook
+            const expanded   = getExpandedCard();
+            const targetText = expanded
+                ? expanded.querySelector('.cs-card-text').textContent.trim()
+                : textEl.textContent.trim();
+            if (!targetText) return;
+            sendBtn.disabled = true;
+            await sendMessage(targetText, 'brainstorm');
+            sendBtn.textContent = 'Sent ✓';
+            sendBtn.disabled    = false;
+            setTimeout(() => { sendBtn.textContent = 'Send'; }, 2000);
+        });
+    }
+}
+
+/** textarea-based clipboard fallback for browsers without navigator.clipboard. */
+function _fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand('copy'); } catch (_) {}
+    document.body.removeChild(ta);
+}
+
+/**
+ * Stream an LLM endpoint into a new card, then re-enable action buttons.
+ * Enforces a maximum of 3 cards by removing the oldest collapsed card first.
+ */
+async function runCardStreamProcess(sourceText, endpoint, type, label) {
+    if (csIsStreaming) return;
+
+    // Cap at 3 total cards: remove oldest collapsed card if needed
+    const existingCards = Array.from(csCards.querySelectorAll('.cs-card'));
+    if (existingCards.length >= 3) {
+        const oldest = existingCards.find(c => !c.classList.contains('cs-expanded'));
+        if (oldest) csCards.removeChild(oldest);
+    }
+
+    // Disable all action buttons during streaming
+    csIsStreaming = true;
+    disableAllCardActions();
+
+    // Create a new card with empty text (will be streamed in)
+    const newCard   = buildCard({ type, label, text: ' ', meta: [] });
+    csCards.appendChild(newCard);
+    setupCardActionHandlers(newCard);
+
+    // Collapse all others, expand the new card
+    csCards.querySelectorAll('.cs-card.cs-expanded').forEach(c => {
+        c.classList.remove('cs-expanded');
+        c.querySelector('.cs-card-header').setAttribute('aria-expanded', 'false');
+    });
+    newCard.classList.add('cs-expanded');
+    newCard.querySelector('.cs-card-header').setAttribute('aria-expanded', 'true');
+    newCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    const textEl    = newCard.querySelector('.cs-card-text');
+    const previewEl = newCard.querySelector('.cs-card-preview');
+    textEl.textContent = '';
+    textEl.classList.add('cs-streaming');
+
+    let accumulated = '';
+
+    try {
+        const response = await fetch(`${getBackendBaseUrl()}${endpoint}`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ text: sourceText }),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const reader  = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            // Abort if the card was removed (user navigated back)
+            if (!document.contains(newCard)) break;
+            accumulated += decoder.decode(value, { stream: true });
+            textEl.textContent = accumulated;
+            // Keep preview in sync while streaming
+            const streamWords = accumulated.trim().split(/\s+/).filter(Boolean);
+            previewEl.textContent = streamWords.slice(0, 15).join(' ') + (streamWords.length > 15 ? '…' : '');
+        }
+
+    } catch (err) {
+        console.error('Card stream error:', err);
+        if (document.contains(newCard)) {
+            textEl.textContent = 'Error: could not process. Check connection and try again.';
+        }
+    } finally {
+        if (document.contains(newCard)) {
+            textEl.classList.remove('cs-streaming');
+        }
+        csIsStreaming = false;
+        updateCardActionStates();
+    }
+}
 
 /* ===== MESSAGE HISTORY ===== */
 function addMessage(text, timestamp, status) {
