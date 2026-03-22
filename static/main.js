@@ -31,7 +31,9 @@ let replayRAF         = null;  // requestAnimationFrame id for progress updates
 let isPlayingBack     = false; // true while audio is actively playing
 
 /* ===== WAKE WORD / HANDS-FREE STATE ===== */
-let wakeRecognition   = null;
+let wakeEngine        = null;   // WakeWordEngine instance (openWakeWord)
+let wakeEngineReady   = false;  // ONNX models loaded
+let wakeEngineLoading = false;  // currently loading models
 let wakeWordListening = false;
 let handsFreeEnabled  = false;
 
@@ -695,8 +697,7 @@ saveSettings.addEventListener('click', () => {
         }
         // Re-init recognition so new language takes effect immediately
         if (!isListening) initRecognition();
-        // Re-init wake recognition for new language too
-        if (!wakeWordListening) initWakeRecognition();
+        // Wake word engine is language-agnostic (ONNX-based), no re-init needed
     }
 
     const newHandsFree = handsFreeToggle ? handsFreeToggle.checked : false;
@@ -862,80 +863,81 @@ quickBtn.addEventListener('click', () => {
 });
 
 /* ===================================================
-   WAKE WORD DETECTION — always-on "Hey Chill" listener
+   WAKE WORD DETECTION — local "Hey Chill" listener
+   Uses openWakeWord + onnxruntime-web (zero network calls).
+   WakeWordEngine is loaded from static/openwakeword-engine.js.
+   NOTE: hey_chill_interim.onnx is hey_mycroft repurposed as an
+   interim model; replace with a trained hey_chill.onnx when ready.
    =================================================== */
 
-function matchesWakeWord(text) {
-    const t = text.toLowerCase().trim();
-    // Fuzzy patterns: "hey chill", "hey chil", "a chill", "hay chill", etc.
-    return /\b(hey|hay|a)\s+chil{1,2}\b/.test(t);
-}
-
-function initWakeRecognition() {
-    if (!SpeechRecognition) return;
-
-    wakeRecognition = new SpeechRecognition();
-    wakeRecognition.continuous      = true;
-    wakeRecognition.interimResults  = true;
-    wakeRecognition.lang            = getRecognitionLang();
-    wakeRecognition.maxAlternatives = 3;
-
-    wakeRecognition.onresult = (event) => {
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-            const result = event.results[i];
-            for (let j = 0; j < result.length; j++) {
-                if (matchesWakeWord(result[j].transcript)) {
-                    handleWakeWordDetected();
-                    return;
-                }
-            }
-        }
-    };
-
-    wakeRecognition.onerror = (event) => {
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-            console.warn('Wake word mic denied:', event.error);
-            wakeWordListening = false;
-            updateWakeDot();
-            return;
-        }
-        // Transient error — will be restarted by onend handler
-    };
-
-    wakeRecognition.onend = () => {
-        wakeWordListening = false;
-        updateWakeDot();
-        // Auto-restart when not in an active mode
-        if (handsFreeEnabled && !isListening && !isBrainstormRecording && !isBrainstormProcessing) {
-            setTimeout(startWakeWordListening, 300);
-        }
-    };
-}
-
-function startWakeWordListening() {
-    if (!SpeechRecognition || !handsFreeEnabled) return;
-    if (isListening || isBrainstormRecording || isBrainstormProcessing) return;
-    if (wakeWordListening) return;
-
-    if (!wakeRecognition) initWakeRecognition();
-
+async function _loadWakeEngine() {
+    if (wakeEngineReady || wakeEngineLoading) return;
+    if (typeof WakeWordEngine === 'undefined') {
+        console.warn('WakeWordEngine not available — wake word disabled');
+        return;
+    }
+    wakeEngineLoading = true;
     try {
-        wakeRecognition.start();
-        wakeWordListening = true;
-        updateWakeDot();
-    } catch (e) {
-        console.warn('Could not start wake recognition:', e);
-        wakeWordListening = false;
-        // Re-init and try once more next cycle
-        initWakeRecognition();
+        wakeEngine = new WakeWordEngine({
+            keywords: ['hey_chill'],
+            modelFiles: { hey_chill: 'hey_chill_interim.onnx' },
+            baseAssetUrl: '/static/models',
+            ortWasmPath: '/static/wasm/',
+            detectionThreshold: 0.5,
+            cooldownMs: 2000,
+        });
+        wakeEngine.on('detect', ({ keyword }) => {
+            if (keyword === 'hey_chill') handleWakeWordDetected();
+        });
+        wakeEngine.on('error', (err) => {
+            console.warn('WakeWordEngine error:', err);
+        });
+        await wakeEngine.load();
+        wakeEngineReady = true;
+        // If hands-free was already enabled while engine was loading, start now
+        if (handsFreeEnabled && !isListening && !isBrainstormRecording && !isBrainstormProcessing && !wakeWordListening) {
+            await _startEngineListening();
+        }
+    } catch (err) {
+        console.warn('WakeWordEngine load failed:', err);
+        wakeEngine = null;
+        wakeEngineReady = false;
+    } finally {
+        wakeEngineLoading = false;
     }
 }
 
+async function _startEngineListening() {
+    try {
+        await wakeEngine.start();
+        wakeWordListening = true;
+        updateWakeDot();
+    } catch (err) {
+        console.warn('Wake word start failed:', err);
+        wakeWordListening = false;
+        updateWakeDot();
+    }
+}
+
+function startWakeWordListening() {
+    if (!handsFreeEnabled) return;
+    if (isListening || isBrainstormRecording || isBrainstormProcessing) return;
+    if (wakeWordListening || wakeEngineLoading) return;
+
+    if (!wakeEngineReady) {
+        // Engine will auto-start after load completes (see _loadWakeEngine)
+        _loadWakeEngine();
+        return;
+    }
+    _startEngineListening();
+}
+
 function stopWakeWordListening() {
+    if (!wakeWordListening) return;
     wakeWordListening = false;
     updateWakeDot();
-    if (wakeRecognition) {
-        try { wakeRecognition.stop(); } catch (_) {}
+    if (wakeEngine && wakeEngineReady) {
+        wakeEngine.stop().catch(() => {});
     }
 }
 
@@ -1665,13 +1667,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         quickBtn.title      = 'Speech recognition not supported in this browser';
     } else {
         initRecognition();
-        initWakeRecognition();
+    }
 
-        // Restore hands-free setting
-        handsFreeEnabled = localStorage.getItem('handsFreeEnabled') === '1';
-        if (handsFreeEnabled) {
-            startWakeWordListening();
-        }
+    // Restore hands-free setting (wake word uses openWakeWord, independent of SpeechRecognition)
+    handsFreeEnabled = localStorage.getItem('handsFreeEnabled') === '1';
+    if (handsFreeEnabled) {
+        startWakeWordListening();
     }
 
     // Restore brainstorm model selection

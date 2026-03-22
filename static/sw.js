@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'hey-chill-v1';
+const CACHE_NAME = 'hey-chill-v2';
 
 const SHELL_ASSETS = [
     '/',
@@ -10,7 +10,13 @@ const SHELL_ASSETS = [
     '/static/icons/icon.svg',
     '/static/icons/icon-192.png',
     '/static/icons/icon-512.png',
+    '/static/ort.min.js',
+    '/static/openwakeword-engine.js',
 ];
+
+// Wake word model assets — cached on first use (lazy), not at install time,
+// because they are large (~17MB total including the WASM binary).
+// The cache-first fetch handler below will cache them after first load.
 
 /* ===== Install — pre-cache shell ===== */
 self.addEventListener('install', (event) => {
