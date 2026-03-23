@@ -880,7 +880,7 @@ async function _loadWakeEngine() {
     try {
         wakeEngine = new WakeWordEngine({
             keywords: ['hey_chill'],
-            modelFiles: { hey_chill: 'hey_chill_interim.onnx' },
+            modelFiles: { hey_chill: 'hey_chill.onnx' },
             baseAssetUrl: '/static/models',
             ortWasmPath: '/static/wasm/',
             detectionThreshold: 0.5,
