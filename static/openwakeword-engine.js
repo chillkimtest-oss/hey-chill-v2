@@ -30,7 +30,7 @@
         weather: 'weather_v0.1.onnx',
         // Custom: "Hey Chill" — using interim hey_mycroft model until
         // a dedicated hey_chill.onnx model is trained.
-        hey_chill: 'hey_chill_interim.onnx',
+        hey_chill: 'hey_chill.onnx',
     };
 
     const AUDIO_PROCESSOR = `
