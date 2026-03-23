@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'hey-chill-v2';
+const CACHE_NAME = 'hey-chill-v3';
 
 const SHELL_ASSETS = [
     '/',
