@@ -883,7 +883,8 @@ async function _loadWakeEngine() {
             modelFiles: { hey_chill: 'hey_chill_interim.onnx' },
             baseAssetUrl: '/static/models',
             ortWasmPath: '/static/wasm/',
-            detectionThreshold: 0.5,
+            detectionThreshold: 0.1,
+            debug: true,
             cooldownMs: 2000,
         });
         wakeEngine.on('detect', ({ keyword }) => {
